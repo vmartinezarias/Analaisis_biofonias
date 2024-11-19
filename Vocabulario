@@ -1,0 +1,37 @@
+# Formato de Datos de Bioacústica
+
+Esta tabla describe las variables que se encuentran en los archivos de datos del proyecto. Cada columna corresponde a una variable específica y se describen sus valores aceptados.
+
+| **Variable**         | **Description**                                                                                     | **Values**                                                                                  |
+|-----------------------|-----------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------|
+| `recording_file`      | Nombre exacto del archivo, sin la extensión                                                        | Alfanumérico                                                                               |
+| `site`               | Código de la carpeta/sitio de muestreo                                                             | Alfanumérico                                                                               |
+| `Cover_type`          | Tipo de cobertura ingresada manualmente                                                           | Texto                                                                                      |
+| `Rec_time`            | Hora de inicio de la grabación                                                                    | Formato tiempo                                                                             |
+| `Label_type`          | Método de etiquetado                                                                              | `Manual`, `software`                                                                       |
+| `Labeler_LastName`    | Apellido(s) del etiquetador                                                                       | Texto                                                                                      |
+| `Labeler_FirstName`   | Nombre(s) del etiquetador                                                                         | Texto                                                                                      |
+| `Labeler_email`       | Dirección de contacto del etiquetador                                                             | Alfanumérico                                                                               |
+| `Date`                | Fecha de etiquetado                                                                               | Día-Mes-Año                                                                                |
+| `Validation`          | Cómo se validó lo que está en `Label_type`                                                        | `Manual`(single, double), `software`(software-manual, f1, score, error, media, distancia, sens, otro) |
+| `Validation_Value`    | Corresponde al % de validación de la prueba realizada                                             | % error, valor F1, otro                                                                   |
+| `software`            | Tipo de programa usado para el etiquetado                                                        | `Raven`, `Audacity`, `Aureas`, `Kaleidoscope`, otro, `auditivo` (cuando se escuchó)        |
+| `membership`          | Grado de certeza/pertenencia al evento que entrega el algoritmo o la incertidumbre del etiquetado manual | 0-1                                                                                         |
+| `sound_source`        | Fuente de sonido                                                                                  | `Biophony`, `Anthropophony`, `Geophony`                                                   |
+| `sound_group`         | Grupo de sonido que se presenta en el audio                                                      | Solo aplica si es biofonía                                                                |
+| `sound_event`         | Tipo de grupo que se presentó                                                                     | Biofonía (género_especie, género_sp, morfo_n), geofonía (lluvia, truenos, viento, cuerpos_agua), antropofonía (vocabulario_antropofonías_geofo), calidad de hábitat (bosque, rastrojo, pastizal, transformación alta/media/baja, permanencia alta/media/baja, otro) |
+| `t_init`              | Tiempo inicial del segmento de sonido                                                             | Numérico en segundos                                                                      |
+| `t_end`               | Tiempo final del segmento de sonido                                                               | Numérico en segundos                                                                      |
+| `f_init`              | Frecuencia inicial del segmento de sonido                                                        | Numérico en kHz                                                                           |
+| `f_end`               | Frecuencia final del segmento de sonido                                                          | Numérico en kHz                                                                           |
+| `f_min`               | Frecuencia mínima del segmento de sonido                                                         | Numérico en kHz                                                                           |
+| `f_max`               | Frecuencia máxima del segmento de sonido                                                         | Numérico en kHz                                                                           |
+| `f_peak`              | Frecuencia pico del segmento de sonido                                                           | Numérico en kHz                                                                           |
+| `n_calls`             | Número de llamados en todo el archivo (se usa 0 cuando no se encontró el sonido específico que se estaba buscando) | Numérico entero                                                                            |
+| `sound_type`          | Tipo de sonido                                                                                   | Anuros (llamado de advertencia, etc), aves (notes, syllabes, phrases, song, calls), murciélagos (tipos), `indet` (si no se puede asignar a ninguna categoría conocida) |
+| `Possition (bats)`    | Llamados altos, bajos, medios                                                                     |                                                                                           |
+| `Comments`            | Comentarios que el etiquetador puede agregar                                                     |                                                                                           |
+
+---
+
+Incluye esta tabla directamente en tu archivo `README.md` para que quede bien documentado en el repositorio de GitHub.
