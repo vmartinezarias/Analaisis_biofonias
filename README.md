@@ -12,18 +12,18 @@ Este proyecto presenta herramientas para analizar patrones acústicos en bioacú
 
 ## Tabla de Contenido
 
-1. [Descripción](#descripción)
-2. [Requisitos](#requisitos)
-3. [Instalación](#instalación)
-4. [Uso](#uso)
-    - [Carga de Datos](#carga-de-datos)
-    - [Eventos por Cobertura](#eventos-por-cobertura)
-    - [Preparar Datos para Curvas de Diversidad](#preparar-datos-para-curvas-de-diversidad)
-    - [Construcción de Curvas de Diversidad](#construcción-de-curvas-de-diversidad)
-    - [Construcción de Matrices para Análisis de Clúster](#construcción-de-matrices-para-análisis-de-clúster)
-    - [Análisis de Clúster](#análisis-de-clúster)
-5. [Exportación](#exportación)
-6. [Licencia](#licencia)
+1. [Descripción]
+2. [Requisitos]
+3. [Instalación]
+4. [Uso]
+    - [Carga de Datos](
+    - [Eventos por Cobertura]
+    - [Preparar Datos para Curvas de Diversidad]
+    - [Construcción de Curvas de Diversidad]
+    - [Construcción de Matrices para Análisis de Clúster]
+    - [Análisis de Clúster]
+5. [Exportación]
+6. [Licencia]
 
 ---
 
@@ -38,15 +38,10 @@ El propósito principal de este proyecto es analizar la actividad acústica de e
 
 ---
 
-## Requisitos
+## Uso.
+El repositorio puede descargarse junto con el archivo .Rmd, o clonarse directamente mediatne RStudio.
 
-Este proyecto requiere R (versión 4.0 o superior). Es necesario asegurarse de tener instalados los siguientes paquetes antes de comenzar:
-
-```r
-required_packages <- c(
-  "shiny", "readxl", "ggplot2", "dplyr", "lubridate", "stringr",
-  "tidyr", "vegan", "cluster", "iNEXT", "openxlsx", "writexl", "ggdendro"
-)
+## Plantillas:
 
 
 
