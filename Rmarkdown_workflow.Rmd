@@ -1,0 +1,1303 @@
+---
+title: "R Notebook para los análisis de los grupos taxonómicos en Bioacústica"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r}
+### ELABORÓ: VÍCTOR M. MARTÍNEZ-ARIAS
+### GRUPO HERPETOLÓGICO DE ANTIOQUIA
+### VERSIÓN DEL CÓDIGO: 3.0
+### FECHA: 20240318
+### CONTACTO: vmanuel.martinez@udea.edu.co
+```
+
+La fase de análisis está a partir de la línea 110
+
+# FASE PREVIA:
+
+Previo a la salida de campo, es propicio generar una lista potencial de las especies que se puedan encontrar.
+
+```{r}
+# Este código está adaptado de: https://www.gbif.org/es/tool/81747/rgbif
+# y con algunas adaptaciones de: https://acolita.com/descargar-datos-de-ocurrencia-de-especies-de-gbif-desde-r/ 
+
+# los valores de taxonKey son:
+# AVES: 212
+# AMPHIBIA: 131
+# CHIROPTERA: 734
+# PRIMATES: 798
+library(rgbif)
+library(sf)
+library(openxlsx)
+Ger_bounding_box <- st_read("/home/vmartinezarias/Dropbox/Doctorado_Personal_Folder/Financial/CUANTICO_PUTUMAYO/Own_sig/Area_busqueda_sp_4326.shp")
+
+myData<-occ_search(taxonKey=212,geometry=st_bbox(Ger_bounding_box), hasCoordinate=TRUE, limit=100000)
+
+summary(myData$data)
+
+write.xlsx(myData, file = "/home/vmartinezarias/Dropbox/Doctorado_Personal_Folder/Financial/CUANTICO_PUTUMAYO/Insumos_iniciales/SpeciesLists/derivedDatasetCounts.xlsx", col.names = TRUE, row.names = FALSE)
+
+
+```
+
+En shiny
+
+```{r}
+library(shiny)
+library(rgbif)
+library(leaflet)
+library(sf)
+library(openxlsx)
+
+# Carga el bounding box fuera de la app
+Ger_bounding_box <- st_read("/home/vmartinezarias/Dropbox/Doctorado_Personal_Folder/Financial/CUANTICO_PUTUMAYO/Own_sig/Area_busqueda_sp_4326.shp")
+
+ui <- fluidPage(
+  titlePanel("Visualización de registros de GBIF en Shiny"),
+  
+  # Mapa de salida
+  leafletOutput("map"),
+  
+  # Botón para actualizar los datos
+  actionButton("update", "Actualizar registros")
+)
+
+server <- function(input, output, session) {
+  
+  # Mapa inicial
+  output$map <- renderLeaflet({
+    leaflet(Ger_bounding_box) %>%
+      addTiles() %>%
+      addPolygons(data = Ger_bounding_box, 
+                  fillColor = "transparent", 
+                  color = "#FF0000", 
+                  weight = 2)
+  })
+  
+  # Observa cuando el usuario haga clic en 'Actualizar registros'
+  observeEvent(input$update, {
+    # Buscar registros de especies
+    myData <- occ_search(taxonKey=212, geometry=st_bbox(Ger_bounding_box), hasCoordinate=TRUE, limit=100)
+    
+    # Chequear si hay datos
+    if (is.data.frame(myData$data)) {
+      # Guardar datos en un archivo xlsx
+      write.xlsx(myData$data, file = "/home/vmartinezarias/Dropbox/Doctorado_Personal_Folder/Financial/CUANTICO_PUTUMAYO/Insumos_iniciales/SpeciesLists/derivedDatasetCounts.xlsx", col.names = TRUE, row.names = FALSE)
+      
+      # Actualizar el mapa con los nuevos datos
+      leafletProxy("map") %>%
+        clearMarkers() %>%
+        addCircleMarkers(data = myData$data, lng = ~decimalLongitude, lat = ~decimalLatitude, popup = ~species)
+    } else {
+      # Mostrar un mensaje si no hay datos
+      showModal(modalDialog(
+        title = "No se encontraron datos",
+        "No hay registros para la clave de taxón dada en el área especificada.",
+        easyClose = TRUE,
+        footer = NULL
+      ))
+    }
+  })
+}
+
+# Ejecutar la aplicación
+shinyApp(ui = ui, server = server)
+
+```
+
+# FASE DE ANALISIS
+
+Antes que nada, vamos a definir la carpeta donde se encuentra la base de datos dentro de este Notebook:
+
+```{r setup}
+    knitr::opts_knit$set(root.dir = normalizePath("c:/Users/vmart/Dropbox/Doctorado_Personal_Folder/Financial/CUANTICO_PUTUMAYO/Informe/Entrega_Jeff/")) 
+```
+
+Posteriormente, cargaremos en el sistema la correspondiente pestaña ("Datos") dentro del archivo de datos nuestro:
+
+```{r echo=FALSE}
+# Cargar la biblioteca readxl
+library(readxl)
+
+# Nombre de la hoja a cargar
+hoja_a_cargar <- "Datos"
+# Cargar el archivo Excel en R
+mis_datos <- read_xlsx("/home/vmartinezarias/Dropbox/CODES/Informes_PSONOROS/Notebook_groups/FORMATO_ETIQUETAS.xlsx", sheet = hoja_a_cargar)
+mis_datos$n_calls <- as.numeric(as.character(mis_datos$n_calls))
+# Ahora, "mis_datos" contiene los datos de la hoja "Datos" del archivo Excel
+
+
+```
+
+Verifiquemos la carga de los datos:
+
+```{r}
+View(mis_datos)
+```
+
+## Eventos por cobertura
+
+Ahora, generaremos una gráfica por todos los eventos y por cada cobertura.
+
+```{r}
+library(shiny)
+library(ggplot2)
+library(dplyr)
+
+# Suponiendo que mis_datos es tu dataframe ya cargado
+
+ui <- fluidPage(
+  titlePanel("Análisis de Llamadas"),
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("habitat", "Tipo de Hábitat", choices = c("Todos", unique(mis_datos$Habitat_type))),
+      selectInput("sound_source", "Nivel 1: Sound Source", choices = c("Todos", unique(mis_datos$sound_source)), selected = "Biophony"),
+      selectInput("group", "Nivel 2: Group", choices = c("Todos", unique(mis_datos$group))),
+      selectInput("Family", "Nivel 3: Familia", choices = c("Todos", unique(mis_datos$Family))),
+      selectInput("Genus", "Nivel 3: Género", choices = c("Todos", unique(mis_datos$Genus))),
+      selectInput("anillo_pozo", "Anillo Pozo", choices = c("Todos", unique(mis_datos$ab))),
+      selectInput("habitat_2", "Habitat_2", choices = c("Todos", unique(mis_datos$Cov_2))),
+      downloadButton("downloadPlot", "Descargar Gráfica")
+    ),
+    mainPanel(
+      plotOutput("callPlot")
+    )
+  )
+)
+
+server <- function(input, output) {
+  
+  output$callPlot <- renderPlot({
+    
+    filtered_data <- mis_datos
+    
+    # Filtrar por diferentes criterios según la selección del usuario
+    if(input$habitat != "Todos") {
+      filtered_data <- filtered_data %>% filter(Habitat_type == input$habitat)
+    }
+    if(input$sound_source != "Todos") {
+      filtered_data <- filtered_data %>% filter(sound_source == input$sound_source)
+    }
+    if(input$group != "Todos") {
+      filtered_data <- filtered_data %>% filter(group == input$group)
+    }
+    if(input$Family != "Todos") {
+      filtered_data <- filtered_data %>% filter(Family == input$Family)
+    }
+    if(input$Genus != "Todos") {
+      filtered_data <- filtered_data %>% filter(Genus == input$Genus)
+    }
+    if(input$anillo_pozo != "Todos") {
+      filtered_data <- filtered_data %>% filter(ab == input$anillo_pozo)
+    }
+    if(input$habitat_2 != "Todos") {
+      filtered_data <- filtered_data %>% filter(Cov_2 == input$habitat_2)
+    }
+    
+    plot_data <- filtered_data %>%
+      group_by(event) %>%
+      summarise(n_calls_sum = sum(n_calls, na.rm = TRUE)) %>%
+      arrange(-n_calls_sum) %>%
+      head(30)  # Selecciona solo los 10 valores más grandes de n_calls
+    
+    p <- ggplot(plot_data, aes(x = reorder(event, -n_calls_sum), y = n_calls_sum)) +
+      geom_bar(stat = "identity", fill = "gray") +
+      geom_text(aes(label = n_calls_sum), vjust = -0.1) +
+      labs(title = "Número de Llamadas por Taxón / Sonotipo", x = "Taxón / Sonotipo", y = "Número de Llamadas") +
+      theme_minimal() +
+      theme(axis.text.x = element_text(angle = 55, hjust = 1, size = 12))
+    
+    return(p)
+  })
+
+  # Función para descargar la gráfica
+  output$downloadPlot <- downloadHandler(
+    filename = function() {
+      paste("grafica_llamadas_", Sys.Date(), ".png", sep="")
+    },
+    content = function(file) {
+      ggsave(file, plot = output$callPlot(), device = "png", width = 10, height = 8)
+    }
+  )
+  
+}
+
+shinyApp(ui = ui, server = server)
+```
+
+## Preparar datos para construcción de curvas
+
+Ahora vamos a prepaparar los datos para la construcción de curvas
+
+```{r echo=FALSE}
+library(dplyr)
+library(lubridate)
+
+# Asumiendo que mis_datos es tu dataframe
+# Limpiar la columna recording_file y convertir a fecha
+mis_datos$fecha <- as.POSIXct(strptime(sub(".*_(\\d{8}_\\d{6}).*", "\\1", mis_datos$recording_file), format="%Y%m%d_%H%M%S"))
+mis_datos$dia <- day(mis_datos$fecha)
+
+# Función para abreviar los nombres de "Habitat_type"
+abreviar_habitat <- function(habitat_name) {
+  abbr <- paste(substr(strsplit(habitat_name, " ")[[1]], 1, 1), collapse = "")
+  return(tolower(abbr))
+}
+
+# Aplicamos la función para crear una nueva columna con los nombres abreviados
+mis_datos$habitat_abbr <- sapply(mis_datos$Habitat_type, abreviar_habitat)
+
+# Filtramos por group == "Aves"
+datos_curva <- mis_datos %>% filter(group == "Aves")
+
+# Creamos un dataframe con conteo de eventos únicos por día y por tipo de hábitat
+conteo <- datos_curva %>%
+  group_by(habitat_abbr, dia) %>%
+  summarise(event_count = n_distinct(event)) %>%
+  ungroup()
+
+# Para la categoría total, sumamos todos los eventos distintos por día
+conteo_total <- datos_curva %>%
+  group_by(dia) %>%
+  summarise(event_count = n_distinct(event)) %>%
+  ungroup()
+
+# Agregamos la abreviatura "Total" a este conteo
+conteo_total$habitat_abbr <- 'Total'
+
+# Unimos los conteos específicos de hábitat con el conteo total
+conteo <- rbind(conteo, conteo_total)
+
+# Reordenamos el dataframe de forma descendente por la cantidad de eventos
+conteo <- conteo %>% arrange(desc(event_count))
+
+# Creamos los vectores para cada habitat type incluyendo el total
+listado_habitat <- split(conteo$event_count, conteo$habitat_abbr)
+
+# Inicializamos la lista que contendrá todos los vectores
+Comp_inc_freq_ecos <- list()
+
+# Llenamos la lista con los vectores, nombrándolos adecuadamente
+for(habitat in names(listado_habitat)) {
+  # Creamos el vector para el hábitat actual
+  habitat_vector <- listado_habitat[[habitat]]
+  # Agregamos el vector a la lista con un nombre adecuado
+  Comp_inc_freq_ecos[[habitat]] <- habitat_vector
+}
+
+# Ahora Comp_inc_freq_ecos es una lista que contiene todos los vectores, incluyendo el total
+as.list(Comp_inc_freq_ecos)
+Comp_inc_freq_ecos  #chequear que no se tengan sitios con un solo valor
+# Si se requiere:
+#Comp_inc_freq_ecos <- lapply(Comp_inc_freq_ecos, function(x) x[!is.na(x)])
+# Si es necesario, se deben borrar sitios
+
+# Nombres de los elementos a mantener (todos excepto bs)
+nombres_a_mantener <- setdiff(names(Comp_inc_freq_ecos), c("l"))  #### AQUÍ QUITÉ LAGUNA (l)
+
+# Subconjuntar la lista para mantener solo los elementos deseados
+Comp_inc_freq_ecos <- Comp_inc_freq_ecos[nombres_a_mantener]
+
+
+
+```
+
+## Construcción de curvas
+Este código genera un shiny con las gráficas de diversidad (Hill numbers) y exporta en una tabla los datos. Funciona con el estadístico CHAO2, el cual es el más apropiado para trabajo con datos acústicos.
+
+```{r}
+library(shiny)
+library(iNEXT)
+library(ggplot2)
+library(openxlsx)  # Para exportar a Excel
+
+# Definición de la interfaz de usuario
+ui <- fluidPage(
+  titlePanel("Análisis de Diversidad de Especies en estudios de bioacústica
+             GRUPO HERPETOLÓGICO DE ANTIOQUIA - GHA"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      # Selector para el valor de q
+      selectInput("qvalue", "Seleccione el valor de q:", 
+                  choices = list("0" = 0, "1" = 1, "2" = 2)),
+      # Selector para el tipo de gráfico
+      selectInput("typevalue", "Seleccione el tipo de gráfico:", 
+                  choices = list("Curva de rarefacción/extrapolación basada en el tamaño de la muestra" = 1,
+                                 "Curva de completitud de la muestra" = 2,
+                                 "Curva de rarefacción/extrapolación basada en la cobertura" = 3)),
+      # Cuadro de texto para las unidades de muestreo
+      numericInput("endpoint", "Unidades de muestreo (días)", value = 20),
+      actionButton("btn", "Generar Gráfico"),
+      downloadButton("downloadData", "Descargar Índices en Excel")  # Botón para descargar el Excel
+    ),
+    mainPanel(
+      # Muestra la gráfica
+      plotOutput("diversityPlot"),
+      # Muestra el texto explicativo
+      textOutput("textExplanation")
+    )
+  )
+)
+
+# Definición del servidor
+server <- function(input, output, session) {
+  
+  # Observa cambios en el input del botón
+  observeEvent(input$btn, {
+    # Valores seleccionados
+    qvalue <- as.numeric(input$qvalue)
+    typevalue <- as.numeric(input$typevalue)
+    endpoint <- input$endpoint
+    
+    # Genera el objeto iNEXT
+    out.incS <- iNEXT(Comp_inc_freq_ecos, q=qvalue, datatype="incidence_freq", se=TRUE, conf=0.95, endpoint=endpoint)
+    
+    # Genera la gráfica
+    output$diversityPlot <- renderPlot({
+      g <- ggiNEXT(out.incS, type=typevalue, se=TRUE, facet.var="Assemblage", grey=TRUE) +
+        theme_bw() +
+        labs(x = "Días de muestreo", y = "Especies", title = titles[qvalue + 1]) +
+        theme(legend.position = "none") +
+        theme(strip.text.x = element_text(size = 15)) + 
+        facet_wrap(~ Assemblage, ncol=3)
+      
+      print(g)
+    })
+    
+    # Establece el texto explicativo combinado de q y type
+    output$textExplanation <- renderText({
+      paste(explanations[qvalue + 1], "\n\n", typeExplanations[typevalue], sep="")
+    })
+    
+    # Preparar datos para exportar
+    output$downloadData <- downloadHandler(
+      filename = function() {
+        paste("indices_diversidad_", Sys.Date(), ".xlsx", sep="")
+      },
+      content = function(file) {
+        wb <- createWorkbook()
+        addWorksheet(wb, "Estimaciones de Diversidad")
+        writeData(wb, "Estimaciones de Diversidad", out.incS$AsyEst)
+        addWorksheet(wb, "Observaciones")
+        writeData(wb, "Observaciones", out.incS$DataInfo)
+        saveWorkbook(wb, file, overwrite = TRUE)
+      }
+    )
+  })
+  
+  # Títulos y textos explicativos para q y type
+  titles <- c("Riqueza de Especies Total: Conteo de Presencia",
+              "Diversidad de Especies Ponderada por Frecuencia de Ocurrencia",
+              "Dominancia de Especies Comunes en Sitios de Muestreo")
+  
+  explanations <- c("Esta gráfica muestra el número total de especies diferentes registradas en todos los sitios de muestreo, reflejando la diversidad sin considerar la frecuencia de aparición.",
+                    "Esta gráfica representaría la diversidad de Shannon, que considera la frecuencia de ocurrencia de cada especie en los sitios de muestreo, proporcionando una visión de la diversidad que equilibra entre especies comunes y raras.",
+                    "Esta gráfica destacaría la diversidad de Simpson, que pone más énfasis en las especies que aparecen con mayor frecuencia, mostrando cómo las especies comunes dominan en el conjunto de datos.")
+  
+  typeExplanations <- c("
+                        Curva de rarefacción/extrapolación basada en el tamaño de la muestra (type = 1):\nEsta curva muestra cómo la riqueza de especies observada (o diversidad de otro orden) aumenta con el número de sitios muestreados o con el número de unidades de muestreo (como trampas, parcelas, etc.). La rarefacción utiliza los datos existentes para estimar cómo habría aumentado la riqueza de especies si se hubieran muestreado menos sitios, mientras que la extrapolación estima la riqueza de especies si se muestrean más sitios de los que originalmente se incluyeron. Es útil para entender cómo la riqueza de especies podría cambiar con un esfuerzo de muestreo diferente.",
+                     "
+                     Curva de completitud de la muestra (type = 2):\nEsta curva proporciona una estimación de qué tan completa es la muestra en términos de capturar la riqueza total de especies en el área de estudio. Se basa en la proporción de la riqueza de especies que se ha detectado en comparación con la riqueza total estimada. Una curva que se aplana indica que se ha alcanzado una buena representación de la riqueza de especies y que muestreos adicionales probablemente no descubrirán muchas especies nuevas.",
+                     "
+                     Curva de rarefacción/extrapolación basada en la cobertura (type = 3):\nEn el contexto de incidencia-frecuencia, la cobertura se refiere a qué tan bien el muestreo ha representado la comunidad de especies, basándose en la proporción de unidades de muestreo en las que aparece cada especie. La curva muestra cómo se espera que aumente la riqueza de especies con un aumento en la cobertura de muestreo. Una cobertura del 100% significaría que cada especie que existe en la comunidad ha sido detectada al menos una vez en el muestreo.")
+  
+}
+
+# Ejecuta la aplicación
+shinyApp(ui = ui, server = server)
+
+```
+
+## Construcción matrices para clúster
+
+Ahora, vamos a construir las matrices de clúster. Se deben generar cuatro: una matriz por hábitat(coberturas), otra por por punto de muestreo, otra por búffer, y otra por segunda unidad de hábitat
+
+```{r}
+library(shiny)
+library(dplyr)
+library(tidyr)
+library(writexl)
+
+ui <- fluidPage(
+  titlePanel("Construcción de Matriz para análisis de Clúster"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("unit_type", "Unidades:",
+                  choices = c("Habitat_type","site", "ab", "Cov_2")),
+      uiOutput("sound_source_ui"),
+      uiOutput("group_ui"),
+      downloadButton("download_data", "Descargar xlsx")
+    ),
+    
+    mainPanel(
+      tableOutput("presence_absence_matrix")
+    )
+  )
+)
+
+server <- function(input, output, session) {
+  
+  # Cargamos los datos
+  # Asumimos que mis_datos es tu data.frame que ya está cargado en R
+  # mis_datos <- read.csv("ruta/a/tu/archivo.csv") # descomenta y usa tu archivo
+  
+  # UI dinámica para 'sound_source'
+  output$sound_source_ui <- renderUI({
+    selectInput("sound_source", "Fuente de sonido:",
+                choices = unique(mis_datos$sound_source))
+  })
+  
+  # UI dinámica para 'group'
+  output$group_ui <- renderUI({
+    req(input$sound_source) # requerimos que sound_source haya sido seleccionado
+    filtered_data <- reactive({
+      mis_datos %>% filter(sound_source == input$sound_source)
+    })
+    
+    selectInput("group", "Grupo:",
+                choices = unique(filtered_data()$group))
+  })
+  
+  # Matriz de presencia/ausencia
+  output$presence_absence_matrix <- renderTable({
+    req(input$group) # requerimos que group haya sido seleccionado
+    filtered_data <- reactive({
+      mis_datos %>%
+        filter(sound_source == input$sound_source, group == input$group)
+    })
+    
+    matrix_data <- reactive({
+      filtered_data() %>%
+        group_by_at(input$unit_type) %>%
+        count(event) %>%
+        pivot_wider(names_from = event, values_from = n, values_fill = list(n = 0)) %>%
+        ungroup()
+    })
+    
+    matrix_data()
+  })
+  
+  # Descargar la matriz en formato Excel
+output$download_data <- downloadHandler(
+  filename = function() {
+    paste("matriz_", Sys.Date(), ".xlsx", sep = "")
+  },
+  content = function(file) {
+    matrix_data <- mis_datos %>%
+      filter(sound_source == input$sound_source, group == input$group) %>%
+      group_by_at(vars(input$unit_type)) %>%
+      count(event) %>%
+      pivot_wider(names_from = event, values_from = n, values_fill = list(n = 0)) %>%
+      ungroup()
+    
+    # Ahora escribimos el archivo
+    write_xlsx(matrix_data, file)
+  },
+  contentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
+
+}
+
+# Ejecuta la aplicación
+shinyApp(ui = ui, server = server)
+
+
+```
+
+## Análisis de Clúster
+
+Ahora, vamos a hacer los análisis de clúster por hábitat
+
+```{r}
+# Cargar la biblioteca readxl
+library(readxl)
+library(dplyr)
+
+# Cargar el archivo Excel en R
+matriz_habitat <- as.data.frame(read_xlsx("C:/Users/vmart/Dropbox/Doctorado_Personal_Folder/Financial/CUANTICO_PUTUMAYO/Informe/Entrega_Jeff/Tablas/Matriz_aves_x_cobertura.xlsx"))
+
+# Convertir todos los valores distintos de cero y NA a 1, mantener los ceros y convertir NAs en ceros
+matriz_habitat <- matriz_habitat %>%
+  mutate(across(-1, ~ ifelse(is.na(.), 0, ifelse(. != 0, 1, .))))
+# Reemplazar NA por 0 en caso de que haya NAs
+##verificar
+View(matriz_habitat)
+
+
+library(shiny)
+library(cluster)
+library(vegan)
+library(ggdendro)
+library(ggplot2)
+
+
+abreviar_nombres <- function(nombres) {
+  nombres <- as.character(nombres) # Convierte a caracteres si no lo son
+  sapply(strsplit(nombres, " "), function(nombre) {
+    paste0(substr(nombre, 1, 1), collapse = "")
+  })
+}
+# Verifica si hay valores NA en la matriz
+any(is.na(matriz_habitat))
+# Asumiendo que 'matriz_habitat' es tu dataframe y la primera columna contiene los nombres
+nombres_unidades <- as.character(matriz_habitat[,1]) # Convierte la primera columna a caracteres
+matriz_numerica <- matriz_habitat[,-1] # Usa todas las columnas excepto la primera para el análisis
+
+View(matriz_numerica)
+
+ui <- fluidPage(
+  titlePanel("Análisis de Clúster de Hábitat"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("method", "Seleccione la medida de similitud/dismilitud:",
+                  choices = c("Jaccard" = "jaccard")),
+      selectInput("linkage", "Seleccione el tipo de enlace:",
+                  choices = c("Enlace Simple" = "single",
+                              "Enlace Completo" = "complete",
+                              "Enlace Promedio" = "average",
+                              "Enlace Centroidal" = "centroid",
+                              "Enlace de Ward" = "ward.D2")),
+      actionButton("go", "Generar Clúster")
+    ),
+    
+    mainPanel(
+      plotOutput("dendrogram"),
+      textOutput("explicacion")
+    )
+  )
+)
+# Server ...
+server <- function(input, output, session) {
+  observeEvent(input$go, {
+    # Asegúrate de que la matriz_habitat es numérica y no contiene NA
+    # Excluye la primera columna con nombres para la distancia
+    matriz_numerica <- as.matrix(matriz_habitat[,-1])
+    matriz_numerica[is.na(matriz_numerica)] <- 0 # Reemplaza NA por 0
+
+    # Abreviar los nombres de las unidades de muestreo para las etiquetas
+    nombres_abreviados <- matriz_habitat[[1]]
+
+    # Realizar el agrupamiento
+    dist_mat <- vegdist(matriz_numerica, method = input$method)
+    fit <- hclust(dist_mat, method = input$linkage)
+    # Calcular correlación cofenética
+    coph_corr <- cor(cophenetic(fit), dist_mat)
+    # Asignar las etiquetas abreviadas al ajuste de hclust
+    fit$labels <- nombres_abreviados
+
+    output$dendrogram <- renderPlot({
+      dendro <- as.dendrogram(fit)
+      # Generar el dendrograma con etiquetas rotadas y abreviaturas como etiquetas
+      ggdendrogram(dendro, theme_dendro = FALSE) + 
+        theme_minimal() +
+        labs(title = "Dendrograma de disimilitud por hábitat", x = "Unidades de hábitat", y = "Disimilitud") +
+        theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 15))
+    })
+    
+   
+output$explicacion <- renderText({
+      paste0("La correlación cofenética para este clúster es ", round(coph_corr, 2), ". ",
+             "Una correlación cofenética alta indica que la representación dendrogramática preserva bien las distancias originales. ",
+             "Una correlación baja podría sugerir que el dendrograma no representa perfectamente las distancias originales.",
+             "\n\n",
+             "El enlace ", input$linkage, " fue seleccionado, lo que significa: ", 
+             switch(input$linkage,
+                    "single" = "El enlace simple considera la distancia más corta entre dos elementos de cada grupo. Tiende a producir grupos alargados y en cadena.",
+                    "complete" = "El enlace completo considera la distancia más larga entre dos elementos de cada grupo. Produce grupos más compactos y bien definidos.",
+                    "average" = "El enlace promedio calcula la distancia promedio entre todos los pares de elementos en dos grupos.",
+                    "centroid" = "La distancia entre dos grupos se mide como la distancia entre sus centroides.",
+                    "ward.D2" = "El método de Ward minimiza la suma de cuadrados dentro de todos los grupos en cada paso del agrupamiento.")
+             )
+    })
+  })
+}
+
+shinyApp(ui, server)
+
+
+
+```
+
+## Análisis de clúster por sitio
+
+Ahora, por sitio
+
+```{r}
+# Cargar las bibliotecas necesarias
+library(readxl)
+library(shiny)
+library(cluster)
+library(vegan)
+library(ggdendro)
+library(ggplot2)
+library(dplyr)
+
+# Leer los datos de la matriz por sitio
+matriz_sitios <- read_xlsx("C:/Users/vmart/Dropbox/Doctorado_Personal_Folder/Financial/CUANTICO_PUTUMAYO/Informe/Entrega_Jeff/Tablas/Matriz_aves_x_sitio.xlsx")
+
+# Convertir todos los valores distintos de cero y NA a 1, mantener los ceros y convertir NAs en ceros
+matriz_sitios <- matriz_sitios %>%
+  mutate(across(-1, ~ ifelse(is.na(.), 0, ifelse(. != 0, 1, .))))
+
+# Función para abreviar nombres
+abreviar_nombres <- function(nombres) {
+  nombres <- as.character(nombres) # Convierte a caracteres si no lo son
+  sapply(strsplit(nombres, " "), function(nombre) {
+    paste0(substr(nombre, 1, 1), collapse = "")
+  })
+}
+
+# Verifica si hay valores NA en la matriz
+any(is.na(matriz_sitios))
+# Asumiendo que 'matriz_sitios' es tu dataframe y la primera columna contiene los nombres de los sitios
+nombres_sitios <- as.character(matriz_sitios[,1]) # Convierte la primera columna a caracteres
+matriz_numerica_sitios <- matriz_sitios[,-1] # Usa todas las columnas excepto la primera para el análisis
+
+# Definir la interfaz de usuario
+ui <- fluidPage(
+  titlePanel("Análisis de Clúster por Sitio"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("method", "Seleccione la medida de similitud/dismilitud:",
+                  choices = c("Jaccard" = "jaccard")),
+      selectInput("linkage", "Seleccione el tipo de enlace:",
+                  choices = c("Enlace Simple" = "single",
+                              "Enlace Completo" = "complete",
+                              "Enlace Promedio" = "average",
+                              "Enlace Centroidal" = "centroid",
+                              "Enlace de Ward" = "ward.D2")),
+      actionButton("go", "Generar Clúster")
+    ),
+    
+    mainPanel(
+      plotOutput("dendrogram"),
+      textOutput("explicacion")
+    )
+  )
+)
+
+# Define la lógica del servidor
+server <- function(input, output, session) {
+  observeEvent(input$go, {
+    # Asegúrate de que la matriz_sitios es numérica y no contiene NA
+    matriz_numerica_sitios <- as.matrix(matriz_sitios[,-1])
+    matriz_numerica_sitios[is.na(matriz_numerica_sitios)] <- 0 # Reemplaza NA por 0
+
+    # Usar los nombres completos de las unidades de muestreo para las etiquetas
+    nombres_completos_sitios <- as.character(matriz_sitios[[1]])
+
+    # Realizar el agrupamiento
+    dist_mat <- vegdist(matriz_numerica_sitios, method = input$method)
+    fit <- hclust(dist_mat, method = input$linkage)
+    
+    # Calcular correlación cofenética
+    coph_corr <- cor(cophenetic(fit), dist_mat)
+     
+    # Asignar los nombres completos a las etiquetas del ajuste de hclust
+    fit$labels <- nombres_completos_sitios
+
+    output$dendrogram <- renderPlot({
+      dendro <- as.dendrogram(fit)
+      # Generar el dendrograma con etiquetas no rotadas y nombres completos como etiquetas
+      ggdendrogram(dendro, theme_dendro = FALSE) + 
+        theme_minimal() +
+        labs(title = "Dendrograma de disimilitud por sitio", x = "Sitios", y = "Disimilitud") +
+        theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 15)) # Ajusta el ángulo si es necesario
+    })
+    
+output$explicacion <- renderText({
+      paste0("La correlación cofenética para este clúster es ", round(coph_corr, 2), ". ",
+             "Una correlación cofenética alta indica que la representación dendrogramática preserva bien las distancias originales. ",
+             "Una correlación baja podría sugerir que el dendrograma no representa perfectamente las distancias originales.",
+             "\n\n",
+             "El enlace ", input$linkage, " fue seleccionado, lo que significa: ", 
+             switch(input$linkage,
+                    "single" = "El enlace simple considera la distancia más corta entre dos elementos de cada grupo. Tiende a producir grupos alargados y en cadena.",
+                    "complete" = "El enlace completo considera la distancia más larga entre dos elementos de cada grupo. Produce grupos más compactos y bien definidos.",
+                    "average" = "El enlace promedio calcula la distancia promedio entre todos los pares de elementos en dos grupos.",
+                    "centroid" = "La distancia entre dos grupos se mide como la distancia entre sus centroides.",
+                    "ward.D2" = "El método de Ward minimiza la suma de cuadrados dentro de todos los grupos en cada paso del agrupamiento.")
+             )
+    })
+  })
+}
+# Ejecutar la aplicación
+shinyApp(ui, server)
+
+
+```
+
+## Análisis de clúster por búffer:
+
+Ahora, por búffer
+
+```{r}
+# Cargar las bibliotecas necesarias
+library(readxl)
+library(shiny)
+library(cluster)
+library(vegan)
+library(ggdendro)
+library(ggplot2)
+library(dplyr)
+
+# Leer los datos de la matriz por Buffer
+matriz_Buffers <- read_xlsx("C:/Users/vmart/Dropbox/Doctorado_Personal_Folder/Financial/CUANTICO_PUTUMAYO/Informe/Entrega_Jeff/Tablas/Matriz_aves_x_buffer.xlsx")
+
+# Convertir todos los valores distintos de cero y NA a 1, mantener los ceros y convertir NAs en ceros
+matriz_Buffers <- matriz_Buffers %>%
+  mutate(across(-1, ~ ifelse(is.na(.), 0, ifelse(. != 0, 1, .))))
+
+# Función para abreviar nombres
+abreviar_nombres <- function(nombres) {
+  nombres <- as.character(nombres) # Convierte a caracteres si no lo son
+  sapply(strsplit(nombres, " "), function(nombre) {
+    paste0(substr(nombre, 1, 1), collapse = "")
+  })
+}
+
+# Verifica si hay valores NA en la matriz
+any(is.na(matriz_Buffers))
+# Asumiendo que 'matriz_Buffers' es tu dataframe y la primera columna contiene los nombres de los Buffers
+nombres_Buffers <- as.character(matriz_Buffers[,1]) # Convierte la primera columna a caracteres
+matriz_numerica_Buffers <- matriz_Buffers[,-1] # Usa todas las columnas excepto la primera para el análisis
+
+# Definir la interfaz de usuario
+ui <- fluidPage(
+  titlePanel("Análisis de Clúster por anillo de Buffer"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("method", "Seleccione la medida de similitud/dismilitud:",
+                  choices = c("Jaccard" = "jaccard")),
+      selectInput("linkage", "Seleccione el tipo de enlace:",
+                  choices = c("Enlace Simple" = "single",
+                              "Enlace Completo" = "complete",
+                              "Enlace Promedio" = "average",
+                              "Enlace Centroidal" = "centroid",
+                              "Enlace de Ward" = "ward.D2")),
+      actionButton("go", "Generar Clúster")
+    ),
+    
+    mainPanel(
+      plotOutput("dendrogram"),
+      textOutput("explicacion")
+    )
+  )
+)
+
+# Define la lógica del servidor
+server <- function(input, output, session) {
+  observeEvent(input$go, {
+    # Asegúrate de que la matriz_Buffers es numérica y no contiene NA
+    matriz_numerica_Buffers <- as.matrix(matriz_Buffers[,-1])
+    matriz_numerica_Buffers[is.na(matriz_numerica_Buffers)] <- 0 # Reemplaza NA por 0
+
+    # Usar los nombres completos de las unidades de muestreo para las etiquetas
+    nombres_completos_Buffers <- as.character(matriz_Buffers[[1]])
+
+    # Realizar el agrupamiento
+    dist_mat <- vegdist(matriz_numerica_Buffers, method = input$method)
+    fit <- hclust(dist_mat, method = input$linkage)
+    # Calcular correlación cofenética
+    coph_corr <- cor(cophenetic(fit), dist_mat)
+    # Asignar los nombres completos a las etiquetas del ajuste de hclust
+    fit$labels <- nombres_completos_Buffers
+
+    output$dendrogram <- renderPlot({
+      dendro <- as.dendrogram(fit)
+      # Generar el dendrograma con etiquetas no rotadas y nombres completos como etiquetas
+      ggdendrogram(dendro, theme_dendro = FALSE) + 
+        theme_minimal() +
+        labs(title = "Dendrograma de disimilitud por Buffer", x = "Buffers", y = "Disimilitud") +
+        theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 15)) # Ajusta el ángulo si es necesario
+    })
+    
+  
+output$explicacion <- renderText({
+      paste0("La correlación cofenética para este clúster es ", round(coph_corr, 2), ". ",
+             "Una correlación cofenética alta indica que la representación dendrogramática preserva bien las distancias originales. ",
+             "Una correlación baja podría sugerir que el dendrograma no representa perfectamente las distancias originales.",
+             "\n\n",
+             "El enlace ", input$linkage, " fue seleccionado, lo que significa: ", 
+             switch(input$linkage,
+                    "single" = "El enlace simple considera la distancia más corta entre dos elementos de cada grupo. Tiende a producir grupos alargados y en cadena.",
+                    "complete" = "El enlace completo considera la distancia más larga entre dos elementos de cada grupo. Produce grupos más compactos y bien definidos.",
+                    "average" = "El enlace promedio calcula la distancia promedio entre todos los pares de elementos en dos grupos.",
+                    "centroid" = "La distancia entre dos grupos se mide como la distancia entre sus centroides.",
+                    "ward.D2" = "El método de Ward minimiza la suma de cuadrados dentro de todos los grupos en cada paso del agrupamiento.")
+             )
+    })
+  })
+}
+# Ejecutar la aplicación
+shinyApp(ui, server)
+
+
+```
+
+## Análisis de clúster por segunda unidad de hábitat:
+
+Finalmente, miraremos el clúster por segunda unidad de hábitat:
+
+```{r}
+# Cargar las bibliotecas necesarias
+library(readxl)
+library(shiny)
+library(cluster)
+library(vegan)
+library(ggdendro)
+library(ggplot2)
+library(dplyr)
+
+# Leer los datos de la matriz por Habitat_v2
+matriz_Habitat_v2s <- read_xlsx("C:/Users/vmart/Dropbox/Doctorado_Personal_Folder/Financial/CUANTICO_PUTUMAYO/Informe/Amphibia/Resultados_Natalia/MatrizxHabitat.xlsx")
+
+# Convertir todos los valores distintos de cero y NA a 1, mantener los ceros y convertir NAs en ceros
+matriz_Habitat_v2s <- matriz_Habitat_v2s %>%
+  mutate(across(-1, ~ ifelse(is.na(.), 0, ifelse(. != 0, 1, .))))
+
+# Función para abreviar nombres
+#abreviar_nombres <- function(nombres) {
+#  nombres <- as.character(nombres) # Convierte a caracteres si no lo son
+#  sapply(strsplit(nombres, " "), function(nombre) {
+#    paste0(substr(nombre, 1, 1), collapse = "")
+#  })
+#}
+
+
+# Verifica si hay valores NA en la matriz
+any(is.na(matriz_Habitat_v2s))
+# Asumiendo que 'matriz_Habitat_v2s' es tu dataframe y la primera columna contiene los nombres de los Habitat_v2s
+nombres_Habitat_v2s <- as.character(matriz_Habitat_v2s[,1]) # Convierte la primera columna a caracteres
+matriz_numerica_Habitat_v2s <- matriz_Habitat_v2s[,-1] # Usa todas las columnas excepto la primera para el análisis
+
+# Definir la interfaz de usuario
+ui <- fluidPage(
+  titlePanel("Análisis de Clúster por unidad de hábitat específico"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("method", "Seleccione la medida de similitud/dismilitud:",
+                  choices = c("Jaccard" = "jaccard")),
+      selectInput("linkage", "Seleccione el tipo de enlace:",
+                  choices = c("Enlace Simple" = "single",
+                              "Enlace Completo" = "complete",
+                              "Enlace Promedio" = "average",
+                              "Enlace Centroidal" = "centroid",
+                              "Enlace de Ward" = "ward.D2")),
+      actionButton("go", "Generar Clúster")
+    ),
+    
+    mainPanel(
+      plotOutput("dendrogram"),
+      textOutput("explicacion")
+    )
+  )
+)
+
+# Define la lógica del servidor
+server <- function(input, output, session) {
+  observeEvent(input$go, {
+    # Asegúrate de que la matriz_Habitat_v2s es numérica y no contiene NA
+    matriz_numerica_Habitat_v2s <- as.matrix(matriz_Habitat_v2s[,-1])
+    matriz_numerica_Habitat_v2s[is.na(matriz_numerica_Habitat_v2s)] <- 0 # Reemplaza NA por 0
+
+    # Usar los nombres completos de las unidades de muestreo para las etiquetas
+    nombres_completos_Habitat_v2s <- as.character(matriz_Habitat_v2s[[1]])
+
+    # Realizar el agrupamiento
+    dist_mat <- vegdist(matriz_numerica_Habitat_v2s, method = input$method)
+    fit <- hclust(dist_mat, method = input$linkage)
+    # Calcular correlación cofenética
+    coph_corr <- cor(cophenetic(fit), dist_mat)
+    # Asignar los nombres completos a las etiquetas del ajuste de hclust
+    fit$labels <- nombres_completos_Habitat_v2s
+
+    output$dendrogram <- renderPlot({
+      dendro <- as.dendrogram(fit)
+      # Generar el dendrograma con etiquetas no rotadas y nombres completos como etiquetas
+      ggdendrogram(dendro, theme_dendro = FALSE) + 
+        theme_minimal() +
+        labs(title = "Dendrograma de disimilitud por Habitat_v2", x = "Habitat_v2s", y = "Disimilitud") +
+        theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5, size = 15)) # Ajusta el ángulo si es necesario
+    })
+    
+output$explicacion <- renderText({
+      paste0("La correlación cofenética para este clúster es ", round(coph_corr, 2), ". ",
+             "Una correlación cofenética alta indica que la representación dendrogramática preserva bien las distancias originales. ",
+             "Una correlación baja podría sugerir que el dendrograma no representa perfectamente las distancias originales.",
+             "\n\n",
+             "El enlace ", input$linkage, " fue seleccionado, lo que significa: ", 
+             switch(input$linkage,
+                    "single" = "El enlace simple considera la distancia más corta entre dos elementos de cada grupo. Tiende a producir grupos alargados y en cadena.",
+                    "complete" = "El enlace completo considera la distancia más larga entre dos elementos de cada grupo. Produce grupos más compactos y bien definidos.",
+                    "average" = "El enlace promedio calcula la distancia promedio entre todos los pares de elementos en dos grupos.",
+                    "centroid" = "La distancia entre dos grupos se mide como la distancia entre sus centroides.",
+                    "ward.D2" = "El método de Ward minimiza la suma de cuadrados dentro de todos los grupos en cada paso del agrupamiento.")
+             )
+    })
+  })
+}
+
+# Ejecutar la aplicación
+shinyApp(ui, server)
+
+
+```
+
+# Análisis de actividad acústica
+
+## Actividad acústica normalizada, general
+
+Análisis de la actividad acústica: Este chunk permite hacer la gráfica de densidad de registros.
+
+```{r}
+# Asegúrate de que estas bibliotecas están instaladas y luego descomenta y ejecuta para cargarlas.
+# install.packages("shiny")
+# install.packages("dplyr")
+# install.packages("ggplot2")
+# install.packages("readxl")
+# install.packages("lubridate")
+# install.packages("stringr")
+
+library(shiny)
+library(dplyr)
+library(ggplot2)
+library(readxl)
+library(lubridate)
+library(stringr)
+library(tidyr)
+
+## CARGAR EXCEL:
+base_datos<-read_excel("C:/Users/vmart/Dropbox/Doctorado_Personal_Folder/Financial/CUANTICO_PUTUMAYO/Informe/Entrega_Jeff/Base_datos_Aves20240412.xlsx", sheet = "Datos")
+
+# UI
+ui <- fluidPage(
+  titlePanel("Análisis de Patrones de Actividad Acústica"),
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("soundSourceInput", "Seleccione la fuente de sonido:", choices = NULL),
+      selectInput("eventInput", "Seleccione el evento:", choices = NULL),
+      actionButton("updateButton", "Actualizar Gráfico")
+    ),
+    mainPanel(
+      plotOutput("activityPlot")
+    )
+  )
+)
+
+### POR FAVOR, CAMBIE LA UBICACIÓN!!!!!!!!!!
+
+# Server
+server <- function(input, output, session) {
+  datos <- reactive({
+    df <- base_datos
+    df <- df %>%
+      mutate(
+        hour_extracted = str_extract(recording_file, "(?<=_)\\d{6}(?=\\.WAV)"),
+        time = as.POSIXct(hour_extracted, format = "%H%M%S", tz = "UTC"),
+        n_calls = as.numeric(n_calls)
+      ) %>%
+      drop_na(time, n_calls)
+    return(df)
+  })
+
+  observe({
+    updateSelectInput(session, "soundSourceInput", choices = unique(datos()$sound_source))
+  })
+
+  observeEvent(input$soundSourceInput, {
+    eventos_filtrados <- datos() %>% filter(sound_source == input$soundSourceInput)
+    updateSelectInput(session, "eventInput", choices = unique(eventos_filtrados$event))
+  })
+
+  observeEvent(input$updateButton, {
+    req(input$soundSourceInput, input$eventInput)
+    datos_filtrados <- datos() %>%
+      filter(sound_source == input$soundSourceInput, event == input$eventInput)
+
+    output$activityPlot <- renderPlot({
+      ggplot(datos_filtrados, aes(x = time, y = ..scaled..)) +
+        geom_density(fill = "blue", alpha = 0.5) +
+        scale_x_datetime(date_breaks = "2 hours", date_labels = "%H:%M") +
+        labs(
+          x = "Hora del día",
+          y = "Densidad Normalizada de Llamadas",
+          title = paste("Actividad de", input$eventInput, "en", input$soundSourceInput)
+        ) +
+        theme_minimal()+
+        theme(plot.title = element_text(size = 16, face = "bold"),
+          axis.title = element_text(size = 14),
+          axis.text = element_text(size = 14))
+    })
+  })
+}
+
+# Run the application 
+shinyApp(ui, server)
+
+
+
+
+```
+
+## Actividad acústica bruta, general
+
+
+```{r}
+library(shiny)
+library(dplyr)
+library(ggplot2)
+library(readxl)
+library(lubridate)
+library(stringr)
+library(tidyr)
+
+# CARGAR EXCEL:
+# Nota: Asegúrate de cambiar la ubicación del archivo según tu entorno
+base_datos <- read_excel("C:/Users/vmart/Dropbox/Doctorado_Personal_Folder/Financial/CUANTICO_PUTUMAYO/Informe/Entrega_Jeff/Base_datos_Aves20240412.xlsx", sheet = "Datos")
+
+# UI
+ui <- fluidPage(
+  titlePanel("Análisis de Patrones de Actividad Acústica"),
+  sidebarLayout(
+    sidebarPanel(
+      selectInput("soundSourceInput", "Seleccione la fuente de sonido:", choices = NULL),
+      selectInput("eventInput", "Seleccione el evento:", choices = NULL),
+      actionButton("updateButton", "Actualizar Gráfico")
+    ),
+    mainPanel(
+      plotOutput("activityPlot")
+    )
+  )
+)
+
+# Server
+server <- function(input, output, session) {
+  datos <- reactive({
+    df <- base_datos
+    df <- df %>%
+      mutate(
+        hour_extracted = str_extract(recording_file, "(?<=_)\\d{6}(?=\\.WAV)"),
+        time = as.POSIXct(hour_extracted, format = "%H%M%S", tz = "UTC"),
+        n_calls = as.numeric(n_calls)
+      ) %>%
+      drop_na(time, n_calls)
+    return(df)
+  })
+
+  observe({
+    updateSelectInput(session, "soundSourceInput", choices = unique(datos()$sound_source))
+  })
+
+  observeEvent(input$soundSourceInput, {
+    eventos_filtrados <- datos() %>% filter(sound_source == input$soundSourceInput)
+    updateSelectInput(session, "eventInput", choices = unique(eventos_filtrados$event))
+  })
+
+  observeEvent(input$updateButton, {
+    req(input$soundSourceInput, input$eventInput)
+    datos_filtrados <- datos() %>%
+      filter(sound_source == input$soundSourceInput, event == input$eventInput) %>%
+      group_by(time) %>%
+      summarise(total_calls = sum(n_calls)) # Suma de n_calls agrupada por tiempo
+
+    output$activityPlot <- renderPlot({
+      ggplot(datos_filtrados, aes(x = time, y = total_calls)) +
+        geom_col() + # Usamos geom_col para la suma de llamadas
+        scale_x_datetime(date_breaks = "2 hours", date_labels = "%H:%M") +
+        labs(
+          x = "Hora del día",
+          y = "Total de Llamadas",
+          title = paste("Actividad de", input$eventInput, "en", input$soundSourceInput)
+        ) +
+        theme_minimal()
+    })
+  })
+}
+
+# Ejecutar la aplicación 
+shinyApp(ui, server)
+```
+
+
+## Por unidades, sin shiny
+
+```{r}
+library(dplyr)
+library(readxl)
+library(lubridate)
+library(stringr)
+library(tidyr)
+
+# Cargamos los datos desde el archivo Excel
+base_datos <- read_excel("C:/Users/vmart/Dropbox/Doctorado_Personal_Folder/Financial/CUANTICO_PUTUMAYO/Informe/Entrega_Jeff/Base_datos_Aves20240412.xlsx", sheet = "Datos")
+
+# Transformamos los datos para extraer la hora y convertir n_calls a numérico
+base_datos <- base_datos %>%
+  mutate(
+    time = as.POSIXct(str_extract(recording_file, "(?<=_)\\d{6}(?=\\.WAV)"), format = "%H%M%S", tz = "UTC"),
+    n_calls = as.numeric(n_calls),
+    hour = hour(time) # Extraemos la hora
+  ) %>%
+  drop_na(time, n_calls)
+
+# Ahora calculamos la suma de n_calls por Habitat_type, event y hora
+summarized_data <- base_datos %>%
+  group_by(Habitat_type, Family, hour) %>%
+  summarise(total_calls = sum(n_calls), .groups = 'drop')
+
+# Visualizamos los datos
+print(summarized_data)
+
+library(ggplot2)
+
+p <- ggplot(summarized_data, aes(x = hour, y = total_calls, fill = Family)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_wrap(~Habitat_type, scales = "free_y") +
+  labs(x = "Hora del día", y = "Total de llamadas", title = "Actividad Acústica por Hora, Familia y Tipo de Hábitat") +
+  theme(
+    legend.text = element_text(size = 14),
+    legend.key.size = unit(1, "lines"),
+    legend.position = "bottom",
+    axis.text.x = element_text(size = 16), # Cambia el tamaño del texto del eje X
+    strip.text = element_text(size = 16),  # Ajusta el tamaño del texto de los títulos de los paneles
+    axis.text.y = element_text(size = 16)  # Cambia el tamaño del texto del eje Y
+  )+
+  guides(fill = guide_legend(ncol = 8)) # Ajusta este valor para cambiar el número de columnas
+
+
+# Visualizar la gráfica
+print(p)
+
+# Ajustar el tamaño de la gráfica al exportarla
+ggsave("C:/Users/vmart/Dropbox/Doctorado_Personal_Folder/Financial/CUANTICO_PUTUMAYO/Informe/Imagenes/Final_figures/Aves/actividad_acustica.png", plot = p, width = 15, height = 18)
+p
+```
+
+
+## Llamadas por búffer
+
+
+```{r}
+library(dplyr)
+library(readxl)
+library(lubridate)
+library(stringr)
+library(tidyr)
+library(ggplot2)
+# Cargamos los datos desde el archivo Excel
+base_datos <- read_excel("C:/Users/vmart/Dropbox/Doctorado_Personal_Folder/Financial/CUANTICO_PUTUMAYO/Informe/Entrega_Jeff/Base_datos_Aves20240412.xlsx", sheet = "Datos")
+
+# Transformamos los datos para extraer la hora y convertir n_calls a numérico
+base_datos <- base_datos %>%
+  mutate(
+    time = as.POSIXct(str_extract(recording_file, "(?<=_)\\d{6}(?=\\.WAV)"), format = "%H%M%S", tz = "UTC"),
+    n_calls = as.numeric(n_calls),
+    hour = hour(time) # Extraemos la hora
+  ) %>%
+  drop_na(time, n_calls)
+
+# Ahora calculamos la suma de n_calls por Habitat_type, event y hora
+summarized_data <- base_datos %>%
+  group_by(ab, Family, hour) %>%
+  summarise(total_calls = sum(n_calls), .groups = 'drop')
+
+# Visualizamos los datos
+print(summarized_data)
+
+library(ggplot2)
+
+p <- ggplot(summarized_data, aes(x = hour, y = total_calls, fill = Family)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  facet_wrap(~ab, scales = "free_y") +
+  labs(x = "Hora del día", y = "Total de llamadas", title = "Actividad Acústica por Hora, Familia y anillo de búffer") +
+  theme(
+    legend.text = element_text(size = 14),
+    legend.key.size = unit(1, "lines"),
+    legend.position = "bottom",
+    axis.text.x = element_text(size = 16), # Cambia el tamaño del texto del eje X
+    strip.text = element_text(size = 16),  # Ajusta el tamaño del texto de los títulos de los paneles
+    axis.text.y = element_text(size = 16)  # Cambia el tamaño del texto del eje Y
+  )+
+  guides(fill = guide_legend(ncol = 8)) # Ajusta este valor para cambiar el número de columnas
+
+
+# Visualizar la gráfica
+print(p)
+
+# Ajustar el tamaño de la gráfica al exportarla
+ggsave("C:/Users/vmart/Dropbox/Doctorado_Personal_Folder/Financial/CUANTICO_PUTUMAYO/Informe/Imagenes/Final_figures/Aves/actividad_acustica_buffer.png", plot = p, width = 15, height = 18)
+p
+
+```
+
+## por especies por habitat
+```{r}
+library(dplyr)
+library(readxl)
+library(lubridate)
+library(stringr)
+library(tidyr)
+library(ggplot2)
+
+# Nombre de la hoja a cargar
+hoja_a_cargar <- "Datos"
+# Cargar el archivo Excel en R
+base_datos <- read_xlsx("C:/Users/vmart/Dropbox/Doctorado_Personal_Folder/Financial/CUANTICO_PUTUMAYO/Informe/Entrega_Jeff/Base_datos_Aves20240412.xlsx", sheet = hoja_a_cargar)
+base_datos$n_calls <- as.numeric(as.character(mis_datos$n_calls))
+
+
+# Transformamos los datos para extraer la hora y convertir n_calls a numérico
+base_datos <- base_datos %>%
+  mutate(
+    time = as.POSIXct(str_extract(recording_file, "(?<=_)\\d{6}(?=\\.WAV)"), format = "%H%M%S", tz = "UTC"),
+    n_calls = as.numeric(n_calls),
+    hour = hour(time) # Extraemos la hora
+  ) %>%
+  drop_na(time, n_calls)
+
+# Filtramos los datos para incluir solo aquellos con 'event' igual a 'Myotis sp'
+sp_data <- base_datos %>%
+  filter(event == "Cyanocorax violaceus")
+
+# Ahora calculamos la suma de n_calls por Habitat_type, event y hora
+summarized_data <- sp_data %>%
+  group_by(Habitat_type, hour) %>%
+  summarise(total_calls = sum((n_calls)), .groups = 'drop')
+
+# Visualizamos los datos
+print(summarized_data)
+
+# Crear la gráfica
+p <- ggplot(summarized_data, aes(x = hour, y = total_calls)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "steelblue") +
+  facet_wrap(~Habitat_type, scales = "free_y") +
+  labs(x = "Hora del día", y = "Total de llamadas", title = "Actividad Acústica de Cyanocorax violaceus por Hora y Tipo de Hábitat") +
+  theme(
+    legend.text = element_text(size = 14),
+    legend.key.size = unit(1, "lines"),
+    legend.position = "bottom",
+    axis.text.x = element_text(size = 16), # Cambia el tamaño del texto del eje X
+    strip.text = element_text(size = 16),  # Ajusta el tamaño del texto de los títulos de los paneles
+    axis.text.y = element_text(size = 16)  # Cambia el tamaño del texto del eje Y
+  )
+
+# Visualizar la gráfica
+print(p)
+
+# Ajustar el tamaño de la gráfica al exportarla
+ggsave("C:/Users/vmart/Dropbox/Doctorado_Personal_Folder/Financial/CUANTICO_PUTUMAYO/Informe/Aves/Actividad_imagenes/sp Cyanocorax violaceus habitat.png", plot = p, width = 8, height = 8)
+
+
+```
+
+
