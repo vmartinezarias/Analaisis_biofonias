@@ -36,13 +36,24 @@ El propósito principal de este proyecto es analizar la actividad acústica de e
 - Construir matrices de presencia/ausencia para análisis de clúster.
 - Generar dendrogramas para visualizar relaciones entre coberturas o sitios.
 
+Adicionalmente se propone una plantilla para el manejo de datos que enlaza directamente con el código construido.
+
+
 ---
+
+
+## Plantilla y Datos de Prueba
+
+Para utilizar este proyecto, puede descargar los archivos base desde los siguientes enlaces:
+
+- **[Plantilla para las etiquetas](https://github.com/vmartinezarias/Analaisis_biofonias/blob/main/FORMATO_ETIQUETAS.xlsx)**: Este archivo contiene la estructura básica necesaria para los análisis.
+- **[Datos de prueba](https://github.com/vmartinezarias/Analaisis_biofonias/blob/main/Etiquetas_con_datos_prueba.xlsx)**: Usa este archivo para probar el funcionamiento del código y las visualizaciones.
+
+
+
 
 ## Uso.
 El repositorio puede descargarse junto con el archivo .Rmd, o clonarse directamente mediatne RStudio.
-
-## Plantillas:
-
 
 
 
