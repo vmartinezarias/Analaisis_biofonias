@@ -49,6 +49,7 @@ Para utilizar este proyecto, puede descargar los archivos base desde los siguien
 - **[Plantilla para las etiquetas](https://github.com/vmartinezarias/Analaisis_biofonias/blob/main/FORMATO_ETIQUETAS.xlsx)**: Este archivo contiene la estructura básica necesaria para los análisis.
 - **[Datos de prueba](https://github.com/vmartinezarias/Analaisis_biofonias/blob/main/Etiquetas_con_datos_prueba.xlsx)**: Usa este archivo para probar el funcionamiento del código y las visualizaciones.
 
+[Vocabulario de la plantilla](https://github.com/vmartinezarias/Analaisis_biofonias/blob/main/Vocabulario)
 
 
 
